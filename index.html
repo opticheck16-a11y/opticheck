@@ -868,7 +868,7 @@ async function buildXlsx(){
     for (let c=1;c<=L;c++){ const cell=ws.getCell(R,c); cell.border=box; cell.font={size:10,color:{argb:INK}};
       cell.alignment={horizontal:c>=2&&c<=5?'left':'center',vertical:'middle'}; if (k%2) cell.fill=fill(ZEB); }
     ws.getCell(R,6).font={size:10,color:{argb:'FF0B6E55'}}; ws.getCell(R,7).font={size:10,color:{argb:'FFB3261E'}};
-    ws.getCell(R,9).numFmt='0.##'; ws.getCell(R,10).numFmt='0.0';
+    ws.getCell(R,9).numFmt='General'; ws.getCell(R,10).numFmt='0.0';
     ws.getCell(R,10).font={bold:true,size:11,color:{argb:ok?'FF1A4FA0':'FFC62828'}};
     const cd=ws.getCell(R,11); cd.font={bold:true,size:9,color:{argb:ok?'FF0B6E55':'FFB3261E'}}; cd.fill=fill(ok?'FFE3F5EE':'FFFBE4E1');
     if (merito && x.puesto<=3){ ws.getCell(R,1).fill=fill(['FFF6E3A1','FFE3E6EB','FFF1D3BC'][x.puesto-1]); ws.getCell(R,1).font={bold:true,size:11}; }
