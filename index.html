@@ -297,7 +297,7 @@ button.x{min-height:32px;padding:4px 10px;font-size:13px}
 <script>
 /* ===== Motor OMR (sin librerías) ===== */
 const OMR = (() => {
-  const DEFAULT_PROFILE = {cols:4, rows:20, opts:5, x0:0.0558, dx:0.0385, dcol:0.2522, y0:0.0292, dy:0.04938, r:0.0142, aspect:0.7254, vlines:[0,0.2413,0.4916,0.7441,1], hlines:[0,1], ref:'tabla'};
+  const DEFAULT_PROFILE = {cols:4, rows:20, opts:5, x0:0.0558, dx:0.0385, dcol:0.2522, y0:0.0292, dy:0.04938, r:0.0142, aspect:0.7254, vlines:[0,0.2413,0.4916,0.7441,1], hlines:[0,1], ref:'tabla', mk:[0.35769,0.29886,0.96538,0.95131]};
 
   function toGray(img, maxSide){
     const s = Math.min(1, maxSide / Math.max(img.width, img.height));
@@ -423,7 +423,11 @@ const OMR = (() => {
       const q=[pick(c=>c.cx+c.cy), pick(c=>-(c.cx-c.cy)), pick(c=>-(c.cx+c.cy)), pick(c=>-(c.cy-c.cx))];
       const sz=q.map(c=>c.area);
       if (new Set(q).size===4 && Math.max(...sz)/Math.min(...sz)<2.2 && quadArea(q.map(c=>[c.cx,c.cy]))>imgA*0.12)
-        cands.push({mode:'marcadores', q:q.map(c=>[c.cx,c.cy])});
+        { const mq=q.map(c=>[c.cx,c.cy]);
+          if (P.mk && P.ref!=='marcadores'){ // ficha OptiCheck: el recuadro está en una posición fija respecto a los 4 cuadros
+            const m=homography([[0,0],[1,0],[1,1],[0,1]], mq), at=(u,v)=>{ const d=m[6]*u+m[7]*v+1; return [(m[0]*u+m[1]*v+m[2])/d,(m[3]*u+m[4]*v+m[5])/d]; };
+            const [u0,v0,u1,v1]=P.mk; cands.push({mode:'marcadores', q:[at(u0,v0),at(u1,v0),at(u1,v1),at(u0,v1)], lf:true});
+          } else cands.push({mode:'marcadores', q:mq}); }
     }
     // 2) Recuadro de respuestas: componente grande y hueco (borde + divisiones)
     const hollow=[];
@@ -434,7 +438,7 @@ const OMR = (() => {
     hollow.sort((a,b)=>b.qa-a.qa); cands.push(...hollow.slice(0,4));
     }
     let best=null;
-    for (const c of cands){ const r=refine(G,c.q,P,c.mode==='tabla' && P.ref!=='marcadores'); c.r=r; c.s=r.score; if(!best||c.s>best.s) best=c; }
+    for (const c of cands){ const r=refine(G,c.q,P,c.lf || (c.mode==='tabla' && P.ref!=='marcadores')); c.r=r; c.s=r.score; if(!best||c.s>best.s) best=c; }
     detect.last=cands;
     if (!best || best.s<0.07) return {mode:'manual', score:best?best.s:0, corners:[[.15,.2],[.85,.2],[.85,.8],[.15,.8]].map(p=>[p[0]*img.width,p[1]*img.height])};
     const r=best.r;
