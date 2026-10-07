@@ -1,3 +1,9 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#12305f">
 <title>OptiCheck</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
@@ -32,7 +38,7 @@ header.top p{margin:0;color:var(--muted);max-width:62ch}
 .step>h2 .n{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:16px;flex:none}
 .hint{color:var(--muted);font-size:14px;margin:0}
 label.f{display:grid;gap:4px;font-size:14px;color:var(--muted)}
-input[type=text],input[type=number],input[type=password],textarea,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0}
+input[type=text],input[type=number],input[type=password],textarea,select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0}
 textarea{font-family:var(--f-mono);font-size:15px;letter-spacing:.06em;min-height:84px;resize:vertical}
 input:focus-visible,textarea:focus-visible,button:focus-visible,select:focus-visible,.btn:focus-within{outline:3px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:2px}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
@@ -135,6 +141,9 @@ button.x{min-height:32px;padding:4px 10px;font-size:13px}
 .login .foot{font-size:12px;text-align:center;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+</head>
+<body>
+
 
 <main class="login" id="login">
   <form class="card" id="loginform" novalidate>
@@ -755,12 +764,12 @@ function ranked(){
 }
 function renderList(){
   document.querySelectorAll('.seg [data-sort]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.sort===sortMode)));
-  $('thead').innerHTML = `<tr><th>${sortMode==='merito'?'Puesto':'N°'}</th><th>Apellidos y nombres</th><th class="hm">Grado</th><th class="num hm">Corr.</th><th class="num hm">Inc.</th><th class="num hm">Blanco</th><th class="num">Nota</th><th class="hm">Hoja</th><th></th></tr>`;
+  $('thead').innerHTML = `<tr><th>${sortMode==='merito'?'Puesto':'N°'}</th><th>Apellidos y nombres</th><th class="hm">Grado</th><th class="num hm">Corr.</th><th class="num hm">Inc.</th><th class="num hm">Blanco</th><th class="num">Puntaje</th><th class="num">Nota</th><th class="hm">Hoja</th><th></th></tr>`;
   const tb=$('tbody'), rs=results();
-  if (!rs.length){ tb.innerHTML=`<tr><td colspan="9" class="empty">Aún no hay fichas calificadas. Ve a <b>Calificar</b> y toma la primera foto.</td></tr>`; $('itemwrap').hidden=true; $('summary').textContent=''; return; }
+  if (!rs.length){ tb.innerHTML=`<tr><td colspan="10" class="empty">Aún no hay fichas calificadas. Ve a <b>Calificar</b> y toma la primera foto.</td></tr>`; $('itemwrap').hidden=true; $('summary').textContent=''; return; }
   const rows=ranked();
   tb.innerHTML = rows.map((x,k)=>{ const r=x.r, G=x.G, medal = sortMode==='merito' && x.puesto<=3 ? ` class="top${x.puesto}"` : '';
-    return `<tr${medal}><td><b>${sortMode==='merito'?x.puesto+'°':k+1}</b></td><td>${esc(fullName(r))}</td><td class="hm">${esc(r.grado||'')}</td><td class="num hm">${G.c}</td><td class="num hm">${G.i}</td><td class="num hm">${G.b}</td><td class="num"><b>${fmt(G.nota,1)}</b></td><td class="hm">${r.sent?'<span class="pill ok">✓</span>':'<span class="pill warn">pendiente</span>'}</td><td><button class="quiet x" data-del="${x.i}" type="button" aria-label="Eliminar">✕</button></td></tr>`; }).join('');
+    return `<tr${medal}><td><b>${sortMode==='merito'?x.puesto+'°':k+1}</b></td><td>${esc(fullName(r))}</td><td class="hm">${esc(r.grado||'')}</td><td class="num hm">${G.c}</td><td class="num hm">${G.i}</td><td class="num hm">${G.b}</td><td class="num">${fmt(G.pts)}</td><td class="num"><b>${fmt(G.nota,1)}</b></td><td class="hm">${r.sent?'<span class="pill ok">✓</span>':'<span class="pill warn">pendiente</span>'}</td><td><button class="quiet x" data-del="${x.i}" type="button" aria-label="Eliminar">✕</button></td></tr>`; }).join('');
   tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
     if (b.dataset.armed){ ev.results.splice(+b.dataset.del,1); saveEvals(); syncTitle(); renderList(); return; }
     b.dataset.armed='1'; b.textContent='¿Borrar?'; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.armed; b.textContent='✕'; } },3000); }));
@@ -967,3 +976,6 @@ function gradeFor(e, ans){ // califica con la clave de cualquier evaluación (pa
 window.addEventListener('online', sendPending);
 buildCal(); buildKeyGrid(); showApp(); sendPending();
 </script>
+
+</body>
+</html>
