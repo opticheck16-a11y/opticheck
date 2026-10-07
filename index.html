@@ -97,6 +97,11 @@ details.cal .grid3{margin-top:10px}
       <label class="f" for="ptsBad">Puntos por incorrecta<input type="number" id="ptsBad" step="0.25" value="0"></label>
       <label class="f" for="ptsBlank">Puntos en blanco<input type="number" id="ptsBlank" step="0.25" value="0"></label>
     </div>
+    <div class="grid3">
+      <label class="f" for="exam">Nombre del examen<input type="text" id="exam" placeholder="Ej. Simulacro III Bimestre 5°A"></label>
+      <label class="f" for="sheetkey">Clave de Google Sheets<input type="password" id="sheetkey" autocomplete="off" placeholder="La clave del Apps Script"></label>
+    </div>
+    <p class="hint" id="sheethint">Con la clave, cada ficha guardada se envía como una fila a tu hoja de Google.</p>
   </section>
 
   <section class="step" id="s-scan">
@@ -133,7 +138,7 @@ details.cal .grid3{margin-top:10px}
   <section class="step" id="s-list">
     <h2><span class="n">4</span>Resultados</h2>
     <div class="tablebox"><table>
-      <thead><tr><th>#</th><th>Alumno</th><th class="num">Corr.</th><th class="num">Inc.</th><th class="num">Blanco</th><th class="num">Puntaje</th><th class="num">Nota /20</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Alumno</th><th class="num">Corr.</th><th class="num">Inc.</th><th class="num">Blanco</th><th class="num">Puntaje</th><th class="num">Nota /20</th><th>Hoja</th><th></th></tr></thead>
       <tbody id="tbody"></tbody>
     </table></div>
     <div class="row">
@@ -536,8 +541,9 @@ function renderResult(){
 }
 $('save').addEventListener('click', ()=>{
   if (!current) return; const name=$('student').value.trim() || `Alumno ${results.length+1}`;
-  results.push({name, answers:current.answers.map(a=>a==='*'?'':a), t:Date.now()}); store.set('results', results);
+  results.push({name, answers:current.answers.map(a=>a==='*'?'':a), t:Date.now(), exam:$('exam').value.trim(), sent:false}); store.set('results', results);
   renderList(); $('student').value=''; showMsg($('listmsg'), `Guardado: ${name}. Toma la siguiente foto.`);
+  sendPending();
   $('s-scan').scrollIntoView({behavior:'smooth', block:'start'});
 });
 $('askey').addEventListener('click', ()=>{
@@ -549,9 +555,9 @@ $('askey').addEventListener('click', ()=>{
 function esc(s){ return s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function renderList(){
   const tb=$('tbody');
-  if (!results.length){ tb.innerHTML=`<tr><td colspan="8" class="empty">Aún no hay fichas guardadas. Lee una ficha y toca “Guardar en la lista”.</td></tr>`; $('itemwrap').hidden=true; return; }
+  if (!results.length){ tb.innerHTML=`<tr><td colspan="9" class="empty">Aún no hay fichas guardadas. Lee una ficha y toca “Guardar en la lista”.</td></tr>`; $('itemwrap').hidden=true; return; }
   tb.innerHTML = results.map((r,i)=>{ const G=grade(r.answers);
-    return `<tr><td>${i+1}</td><td>${esc(r.name)}</td><td class="num">${G.c}</td><td class="num">${G.i}</td><td class="num">${G.b}</td><td class="num">${fmt(G.pts)}</td><td class="num"><b>${fmt(G.nota,1)}</b></td><td><button class="quiet" data-del="${i}" type="button" aria-label="Eliminar">✕</button></td></tr>`; }).join('');
+    return `<tr><td>${i+1}</td><td>${esc(r.name)}</td><td class="num">${G.c}</td><td class="num">${G.i}</td><td class="num">${G.b}</td><td class="num">${fmt(G.pts)}</td><td class="num"><b>${fmt(G.nota,1)}</b></td><td>${r.sent?'<span class="pill ok">✓</span>':'<span class="pill warn">pendiente</span>'}</td><td><button class="quiet" data-del="${i}" type="button" aria-label="Eliminar">✕</button></td></tr>`; }).join('');
   tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ results.splice(+b.dataset.del,1); store.set('results',results); renderList(); }));
   const key=getKey(), items=$('items'); items.innerHTML='';
   for (let q=0;q<nq();q++){ const k=key[q]; if(!k||k==='-') continue;
@@ -570,8 +576,13 @@ function table(sep, decComma){
 $('csv').addEventListener('click', async ()=>{
   if (!results.length) return showMsg($('listmsg'),'No hay resultados para descargar.',true);
   const dl = await Promise.resolve(window.claude?.use?.('downloads')).catch(()=>null);
-  if (!dl){ return copyFallback(); }
-  try{ await dl.save({filename:`resultados-simulacro-${new Date().toISOString().slice(0,10)}.csv`, data:'﻿'+table(';',true)}); showMsg($('listmsg'),'Archivo listo. Ábrelo con Excel o Google Sheets.'); }
+  const fname=`resultados-${new Date().toISOString().slice(0,10)}.csv`, data='﻿'+table(';',true);
+  if (!dl){ // fuera de Claude (GitHub Pages): descarga normal del navegador
+    try{ const u=URL.createObjectURL(new Blob([data],{type:'text/csv'})), a=document.createElement('a');
+      a.href=u; a.download=fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),3000);
+      showMsg($('listmsg'),'Archivo descargado. Ábrelo con Excel o Google Sheets.'); }catch(e){ copyFallback(); }
+    return; }
+  try{ await dl.save({filename:fname, data}); showMsg($('listmsg'),'Archivo listo. Ábrelo con Excel o Google Sheets.'); }
   catch(e){ if (e && e.code==='declined') showMsg($('listmsg'),'Descarga cancelada.'); else copyFallback(); }
 });
 function copyFallback(){ const t=table('\t',true); $('copybox').hidden=false; $('copybox').value=t; $('copybox').select();
@@ -595,5 +606,25 @@ function buildCal(){ $('cal-ref').value=profile.ref||'tabla'; $('calgrid').inner
     if (current && img && corners){ if(k==='aspect') wp=OMR.warp(img,corners,900,Math.round(900*profile.aspect)); const r=OMR.read(wp,profile); current={answers:r.answers,flags:r.flags,edited:new Set(),r}; renderResult(); } })); }
 $('cal-ref').addEventListener('change', e=>{ profile.ref=e.target.value; store.set('profile',profile); });
 $('calreset').addEventListener('click', ()=>{ profile=Object.assign({},OMR.DEFAULT_PROFILE); store.set('profile',{}); buildCal(); onKey(); });
-buildCal(); onKey(); renderList();
+/* ===== Envío a Google Sheets (Apps Script) ===== */
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyF9XC9qsCeuks3ePdsMbBem9RLNUl5LneEcsbFQFR5-JjAwbiyX7Qc_W38iyd_9aF4BA/exec';
+$('exam').value = store.get('exam',''); $('sheetkey').value = store.get('sheetkey','');
+$('exam').addEventListener('input', ()=>store.set('exam',$('exam').value));
+$('sheetkey').addEventListener('input', ()=>{ store.set('sheetkey',$('sheetkey').value); sendPending(); });
+let sending=false;
+async function sendPending(){
+  const clave=$('sheetkey').value.trim(); if (!clave || sending) return;
+  const pend=results.filter(r=>!r.sent); if (!pend.length) return;
+  sending=true; let ok=0;
+  for (const r of pend){ const G=grade(r.answers);
+    const body={clave, examen:r.exam||$('exam').value.trim(), alumno:r.name, correctas:G.c, incorrectas:G.i, blanco:G.b,
+      puntaje:Math.round(G.pts*100)/100, nota:Math.round(G.nota*10)/10, respuestas:Array.from({length:nq()},(_,q)=>r.answers[q]||'-').join('')};
+    try{ await fetch(SHEETS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+      r.sent=true; ok++; }catch(e){ break; } }
+  sending=false; store.set('results',results); renderList();
+  if (ok) showMsg($('listmsg'), `Enviado a Google Sheets: ${ok} ficha${ok>1?'s':''}.`);
+  else showMsg($('listmsg'), 'Sin conexión: las fichas quedan pendientes y se envían solas cuando vuelva el internet.', true);
+}
+window.addEventListener('online', sendPending);
+buildCal(); onKey(); renderList(); sendPending();
 </script>
