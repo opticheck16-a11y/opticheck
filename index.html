@@ -117,6 +117,7 @@ button.big{min-height:64px;font-size:20px;justify-content:center;border-radius:1
 .student{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media (max-width:520px){.student{grid-template-columns:1fr}}
 .stat.warnbox b{color:var(--warn)}
+#syncstate.err{color:var(--warn)}
 .row.between{justify-content:space-between}
 .seg{display:inline-flex;background:var(--soft);border-radius:10px;padding:4px;gap:4px;flex-wrap:wrap}
 .seg button{background:transparent;border:0;color:var(--muted);min-height:36px;padding:6px 12px;font-size:14px}
@@ -170,6 +171,7 @@ button.x{min-height:32px;padding:4px 10px;font-size:13px}
     </header>
     <button id="newEval" type="button" class="big">＋ Evaluar</button>
     <div id="evlist" class="evlist"></div>
+    <p id="syncstate" class="hint"></p>
   </section>
 
   <!-- ===== Evaluación ===== -->
@@ -548,14 +550,25 @@ let profile = Object.assign({}, OMR.DEFAULT_PROFILE, store.get('profile', {}));
 let moved = false, img = null, corners = null, mode = '', current = null;
 
 /* Evaluaciones: cada una con su clave maestra y sus resultados */
-let evals = store.get('evals', null);
-if (!evals){ evals=[]; const old=store.get('results', []);
-  if (old.length) evals.push({id:'e'+Date.now(), name:store.get('exam','')||'Evaluación anterior', grado:'', created:Date.now(), key:store.get('key',''), pts:store.get('pts',[1,0,0]),
-    results:old.map(r=>({paterno:r.name||'', materno:'', nombres:'', grado:'', answers:r.answers, t:r.t, sent:!!r.sent}))});
-  store.set('evals', evals); }
+let evals = [];
+const DEV = store.get('dev', null) || (()=>{ const d='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); store.set('dev',d); return d; })();
+const uKey = ()=> 'evals:'+String(session&&session.usuario||'').trim().toLowerCase();
+const newRid = ()=> 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+function loadEvals(){ // evaluaciones del profesor que inició sesión
+  let list = store.get(uKey().slice(0), null);
+  if (!list){ list = store.get('evals', null) || []; const old=store.get('results', []);
+    if (!list.length && old.length) list.push({id:'e'+Date.now(), name:store.get('exam','')||'Evaluación anterior', grado:'', created:Date.now(), key:store.get('key',''), pts:store.get('pts',[1,0,0]),
+      results:old.map(r=>({paterno:r.name||'', materno:'', nombres:'', grado:'', answers:r.answers, t:r.t, sent:!!r.sent}))});
+    try{ localStorage.removeItem('omr.evals'); localStorage.removeItem('omr.results'); }catch(e){} }
+  list.forEach(e=>{ e.results=e.results||[]; e.del=e.del||[]; e.mt=e.mt||e.created||0;
+    e.results.forEach(r=>{ if(!r.rid){ r.rid=newRid(); r.dev=DEV; e.dirty=true; } }); if (e.v==null){ e.v=1; e.dirty=true; } });
+  return list;
+}
 let ev = null, sortMode = store.get('sort','alfa');
-const saveEvals = ()=>store.set('evals', evals);
+const saveEvals = ()=>{ if (session) store.set(uKey(), evals); };
 const results = ()=> ev ? ev.results : [];
+const liveEvals = ()=> evals.filter(e=>!e.deleted);
+function touch(e, meta){ if(!e) return; if (meta) e.mt=Date.now(); e.v=(e.v||0)+1; e.dirty=true; saveEvals(); schedulePush(); }
 
 function parseKey(s){ return s.toUpperCase().replace(/[^A-E\-]/g,'').split(''); }
 function getKey(){ return parseKey($('key').value); }
@@ -587,15 +600,15 @@ function keyMarked(){ return getKey().slice(0,nq()).filter(c=>c!=='-').length; }
 
 function renderHome(){
   const box=$('evlist');
-  if (!evals.length){ box.innerHTML='<div class="empty card">Aún no tienes evaluaciones. Toca <b>＋ Evaluar</b> para crear la primera.</div>'; return; }
-  box.innerHTML = [...evals].sort((a,b)=>b.created-a.created).map(e=>{
+  if (!liveEvals().length){ box.innerHTML='<div class="empty card">Aún no tienes evaluaciones. Toca <b>＋ Evaluar</b> para crear la primera.</div>'; return; }
+  box.innerHTML = liveEvals().sort((a,b)=>b.created-a.created).map(e=>{
     const n=e.results.length, d=new Date(e.created).toLocaleDateString('es-PE',{day:'numeric',month:'short',year:'numeric'});
     return `<button type="button" class="evcard" data-id="${e.id}"><span class="t">${esc(e.name||'Sin nombre')}</span><span class="m">${esc(e.grado||'')}${e.grado?' · ':''}${d}</span><span class="c"><b>${n}</b> ${n===1?'ficha':'fichas'}</span></button>`; }).join('');
   box.querySelectorAll('.evcard').forEach(b=>b.addEventListener('click',()=>openEval(b.dataset.id)));
 }
 $('newEval').addEventListener('click', ()=>{
-  const e={id:'e'+Date.now(), name:'', grado:'', created:Date.now(), key:'', pts:store.get('pts',[1,0,0]), results:[]};
-  evals.push(e); saveEvals(); openEval(e.id); $('exam').focus();
+  const e={id:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:'', grado:'', created:Date.now(), mt:Date.now(), key:'', pts:store.get('pts',[1,0,0]), results:[], del:[]};
+  evals.push(e); touch(e,true); openEval(e.id); $('exam').focus();
 });
 $('back').addEventListener('click', ()=>{ ev=null; current=null; renderHome(); showView('home'); });
 function openEval(id){
@@ -606,11 +619,11 @@ function openEval(id){
   onKey(); showView('eval'); showTab(keyMarked()===0 ? 't-key' : ev.results.length ? 't-list' : 't-scan');
 }
 function syncTitle(){ $('evTitle').textContent = (ev && ev.name) || 'Nueva evaluación'; $('cnt').textContent = ev ? ev.results.length : 0; }
-$('exam').addEventListener('input', ()=>{ if(!ev) return; ev.name=$('exam').value; saveEvals(); syncTitle(); });
-$('evGrado').addEventListener('input', ()=>{ if(!ev) return; ev.grado=$('evGrado').value; saveEvals(); });
+$('exam').addEventListener('input', ()=>{ if(!ev) return; ev.name=$('exam').value; touch(ev,true); syncTitle(); });
+$('evGrado').addEventListener('input', ()=>{ if(!ev) return; ev.grado=$('evGrado').value; touch(ev,true); });
 $('goScan').addEventListener('click', ()=>{
   if (!keyMarked()){ $('keyhint').textContent='Marca al menos una respuesta en la clave.'; return; }
-  if (!ev.name.trim()){ ev.name='Evaluación '+new Date().toLocaleDateString('es-PE'); $('exam').value=ev.name; saveEvals(); syncTitle(); }
+  if (!ev.name.trim()){ ev.name='Evaluación '+new Date().toLocaleDateString('es-PE'); $('exam').value=ev.name; touch(ev,true); syncTitle(); }
   showTab('t-scan'); window.scrollTo(0,0);
 });
 
@@ -633,7 +646,8 @@ function onKey(){
   $('keycount').className = 'pill ' + (k.length>nq()?'bad':marked===nq()?'ok':'warn');
   $('keyhint').textContent = k.length>nq() ? `Sobran ${k.length-nq()} letras en el texto.` : marked===nq() ? 'Clave completa.' : `Faltan ${nq()-marked} por marcar.`;
   syncKeyGrid(); syncTitle();
-  if (ev){ ev.key=$('key').value; ev.pts=[num('ptsOk'),num('ptsBad'),num('ptsBlank')]; saveEvals(); store.set('pts', ev.pts); }
+  if (ev){ const nk=$('key').value, np=[num('ptsOk'),num('ptsBad'),num('ptsBlank')];
+    if (nk!==(ev.key||'') || String(np)!==String(ev.pts)){ ev.key=nk; ev.pts=np; touch(ev,true); store.set('pts', ev.pts); } }
   if (current) renderResult();
 }
 ['key','ptsOk','ptsBad','ptsBlank'].forEach(id=>$(id).addEventListener('input', onKey));
@@ -745,7 +759,7 @@ $('save').addEventListener('click', ()=>{
   const st={paterno:$('stPat').value.trim(), materno:$('stMat').value.trim(), nombres:$('stNom').value.trim(), grado:$('stGrado').value.trim()};
   if (!st.paterno && !st.nombres){ showMsg($('savemsg'),'Escribe al menos el apellido paterno o los nombres del alumno.',true); $('stPat').focus(); return; }
   store.set('lastGrado', st.grado);
-  ev.results.push({...st, answers:[...current.answers], t:Date.now(), sent:false}); saveEvals();
+  ev.results.push({...st, answers:[...current.answers], t:Date.now(), sent:false, rid:newRid(), dev:DEV}); touch(ev);
   const G=grade(current.answers);
   current=null; img=null; $('s-res').hidden=true; $('cornerwrap').hidden=true; syncTitle();
   showMsg($('scanmsg'), `✓ Guardado: ${fullName(st)} — nota ${fmt(G.nota,1)}. Toma la foto de la siguiente ficha.`);
@@ -771,7 +785,7 @@ function renderList(){
   tb.innerHTML = rows.map((x,k)=>{ const r=x.r, G=x.G, medal = sortMode==='merito' && x.puesto<=3 ? ` class="top${x.puesto}"` : '';
     return `<tr${medal}><td><b>${sortMode==='merito'?x.puesto+'°':k+1}</b></td><td>${esc(fullName(r))}</td><td class="hm">${esc(r.grado||'')}</td><td class="num hm">${G.c}</td><td class="num hm">${G.i}</td><td class="num hm">${G.b}</td><td class="num">${fmt(G.pts)}</td><td class="num"><b>${fmt(G.nota,1)}</b></td><td class="hm">${r.sent?'<span class="pill ok">✓</span>':'<span class="pill warn">pendiente</span>'}</td><td><button class="quiet x" data-del="${x.i}" type="button" aria-label="Eliminar">✕</button></td></tr>`; }).join('');
   tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
-    if (b.dataset.armed){ ev.results.splice(+b.dataset.del,1); saveEvals(); syncTitle(); renderList(); return; }
+    if (b.dataset.armed){ const [r]=ev.results.splice(+b.dataset.del,1); if (r&&r.rid) ev.del.push(r.rid); touch(ev); syncTitle(); renderList(); return; }
     b.dataset.armed='1'; b.textContent='¿Borrar?'; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.armed; b.textContent='✕'; } },3000); }));
   const notas=rs.map(r=>grade(r.answers).nota), prom=notas.reduce((a,b)=>a+b,0)/notas.length, apr=notas.filter(n=>n>=10.5).length;
   $('summary').textContent = `${rs.length} fichas · promedio ${fmt(prom,1)} · aprobados ${apr}`;
@@ -918,7 +932,7 @@ let delArmed=false;
 $('delEval').addEventListener('click', ()=>{
   if (!delArmed){ delArmed=true; $('delEval').textContent='Toca otra vez para eliminar'; setTimeout(()=>{delArmed=false;$('delEval').textContent='Eliminar evaluación';},4000); return; }
   delArmed=false; $('delEval').textContent='Eliminar evaluación';
-  evals=evals.filter(e=>e!==ev); saveEvals(); ev=null; renderHome(); showView('home');
+  ev.deleted=true; ev.results=[]; touch(ev,true); ev=null; renderHome(); showView('home');
 });
 
 /* ===== Calibración ===== */
@@ -939,7 +953,8 @@ async function api(body){
 }
 function showApp(){
   $('login').hidden = !!session; $('app').hidden = !session;
-  if (session){ $('who-name').textContent = session.nombre || session.usuario; renderHome(); showView('home'); }
+  if (session){ $('who-name').textContent = session.nombre || session.usuario; evals=loadEvals(); saveEvals(); ev=null; renderHome(); showView('home'); syncNow(); }
+  else { evals=[]; ev=null; }
 }
 $('loginform').addEventListener('submit', async e=>{
   e.preventDefault(); const usuario=$('lg-user').value.trim(), clave=$('lg-pass').value;
@@ -955,16 +970,16 @@ $('logout').addEventListener('click', ()=>{ session=null; store.set('session',nu
 let sending=false;
 async function sendPending(){
   if (!session || sending) return;
-  const jobs=[]; evals.forEach(e=>e.results.forEach(r=>{ if(!r.sent) jobs.push([e,r]); })); if (!jobs.length) return;
+  const jobs=[]; liveEvals().forEach(e=>e.results.forEach(r=>{ if(!r.sent && r.dev===DEV) jobs.push([e,r]); })); if (!jobs.length) return;
   sending=true; let ok=0, fail='';
   for (const [e,r] of jobs){ const G=gradeFor(e, r.answers);
     const body={accion:'guardar', usuario:session.usuario, clave:session.clave, examen:e.name||'', grado:r.grado||'',
       paterno:r.paterno||'', materno:r.materno||'', nombres:r.nombres||'', alumno:fullName(r),
       correctas:G.c, incorrectas:G.i, blanco:G.b, puntaje:Math.round(G.pts*100)/100, nota:Math.round(G.nota*10)/10,
       respuestas:Array.from({length:nq()},(_,q)=>r.answers[q]||'-').join('')};
-    try{ const res=await api(body); if (res.ok){ r.sent=true; ok++; } else { fail=res.error||'La hoja no aceptó el envío.'; break; } }
+    try{ const res=await api(body); if (res.ok){ r.sent=true; e.dirty=true; ok++; } else { fail=res.error||'La hoja no aceptó el envío.'; break; } }
     catch(err){ fail='Sin conexión: las fichas quedan pendientes y se envían solas cuando vuelva el internet.'; break; } }
-  sending=false; saveEvals(); if (ev && !$('t-list').hidden) renderList(); renderHome();
+  sending=false; saveEvals(); if (ok) schedulePush(); if (ev && !$('t-list').hidden) renderList(); renderHome();
   const tgt = ev ? $('listmsg') : null;
   if (tgt){ if (fail) showMsg(tgt, fail, true); else if (ok) showMsg(tgt, `Enviado a Google Sheets: ${ok} ficha${ok>1?'s':''}.`); }
 }
@@ -973,7 +988,56 @@ function gradeFor(e, ans){ // califica con la clave de cualquier evaluación (pa
   for (let q=0;q<nq();q++){ const k=key[q]; if(!k||k==='-') continue; graded++; const a=ans[q]||''; if(!a) b++; else if(a===k) c++; else i++; }
   const pts=c*ok+i*bad+b*bl, max=graded*ok; return {c,i,b,pts,nota:max>0?Math.max(0,pts)/max*20:0};
 }
-window.addEventListener('online', sendPending);
+
+/* ===== Sincronización entre equipos (Google Sheets, hoja "Evaluaciones") ===== */
+function mergeEval(a, b){ // une dos copias de la misma evaluación sin perder fichas
+  if (!a) return b; if (!b) return a;
+  const m = (b.mt||0) > (a.mt||0) ? b : a, del=[...new Set([...(a.del||[]),...(b.del||[])])], map=new Map();
+  for (const r of [...(a.results||[]),...(b.results||[])]){ const p=map.get(r.rid); map.set(r.rid, p ? {...p, sent:!!(p.sent||r.sent)} : r); }
+  return {id:a.id, name:m.name, grado:m.grado, key:m.key, pts:m.pts, mt:m.mt||0, created:Math.min(a.created||Date.now(), b.created||Date.now()),
+    deleted:!!(a.deleted||b.deleted), del, results: (a.deleted||b.deleted) ? [] : [...map.values()].filter(r=>!del.includes(r.rid)).sort((x,y)=>x.t-y.t)};
+}
+const strip = e => { const {dirty, v, ...o} = e; return o; };
+let syncing=false, pushTimer=null, lastSync=0;
+function schedulePush(){ clearTimeout(pushTimer); pushTimer=setTimeout(syncNow, 1500); }
+function syncState(t, err){ const el=$('syncstate'); if (!el) return; el.textContent=t; el.classList.toggle('err', !!err); }
+function applyServer(list){
+  for (const se of list||[]){ const i=evals.findIndex(e=>e.id===se.id);
+    if (i<0) evals.push({...se, v:0, dirty:false});
+    else { const l=evals[i], m=mergeEval(l, se); Object.assign(l, m); } }
+}
+async function syncNow(){
+  if (!session || syncing) return; syncing=true; clearTimeout(pushTimer);
+  syncState('Sincronizando…');
+  try{
+    const dirty=evals.filter(e=>e.dirty), sentV=new Map(dirty.map(e=>[e.id,e.v]));
+    const r = await api({accion:'sincronizar', usuario:session.usuario, clave:session.clave, evals:dirty.map(strip)});
+    if (!r.ok) throw new Error(r.error||'');
+    applyServer(r.evals);
+    dirty.forEach(e=>{ if (e.v===sentV.get(e.id)) e.dirty=false; });
+    saveEvals(); lastSync=Date.now();
+    syncState('✓ Sincronizado con tu cuenta · '+new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'}));
+    refreshViews();
+    if (evals.some(e=>e.dirty)) schedulePush();
+  }catch(err){
+    syncState(navigator.onLine===false || err instanceof TypeError ? 'Sin conexión: tus cambios quedan guardados en este equipo y se sincronizan al volver el internet.' : 'No se pudo sincronizar. Revisa que el Apps Script esté actualizado.', true);
+  }
+  syncing=false; sendPending();
+}
+function refreshViews(){
+  if (!$('v-home').hidden) renderHome();
+  if (ev){ const cur=evals.find(e=>e.id===ev.id);
+    if (!cur || cur.deleted){ ev=null; renderHome(); showView('home'); return; }
+    ev=cur; const ae=document.activeElement;
+    if (ae!==$('exam')) $('exam').value=ev.name||''; if (ae!==$('evGrado')) $('evGrado').value=ev.grado||'';
+    if (ae!==$('key') && $('key').value!==(ev.key||'')){ $('key').value=ev.key||''; }
+    ['ptsOk','ptsBad','ptsBlank'].forEach((id,i)=>{ if (ae!==$(id)) $(id).value=ev.pts[i]; });
+    syncKeyGrid(); const k=getKey(); $('keycount').textContent=`${keyMarked()} / ${nq()}`; syncTitle();
+    if (!$('t-list').hidden) renderList(); }
+}
+window.addEventListener('online', ()=>{ syncNow(); sendPending(); });
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible' && Date.now()-lastSync>5000) syncNow(); });
+setInterval(()=>{ if (document.visibilityState==='visible') syncNow(); }, 60000);
 buildCal(); buildKeyGrid(); showApp(); sendPending();
 </script>
 
