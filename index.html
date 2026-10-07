@@ -63,12 +63,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .kr .q{font-family:var(--f-mono);font-size:12px;color:var(--muted);width:24px;text-align:right;flex:none;font-variant-numeric:tabular-nums}
 .kb{flex:1 1 0;min-width:0;max-width:30px;aspect-ratio:1;height:auto;min-height:0;padding:0;border-radius:50%;justify-content:center;font:600 12px/1 var(--f-body);background:var(--paper);color:var(--muted);border:1.5px solid var(--line)}
 .kb[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.ans{font:inherit;font-family:var(--f-mono);font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 8px;min-height:34px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-weight:500;cursor:pointer}
+.ans{font:inherit;font-family:var(--f-mono);font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 8px;min-height:34px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-weight:500;cursor:pointer}
 .ans .q{color:var(--muted);font-variant-numeric:tabular-nums}
 .ans .k{font-size:12px;color:var(--muted)}
-.ans.ok{border-color:color-mix(in srgb,var(--ok) 60%,var(--line));background:color-mix(in srgb,var(--ok) 12%,var(--bg))}
-.ans.bad{border-color:color-mix(in srgb,var(--bad) 60%,var(--line));background:color-mix(in srgb,var(--bad) 12%,var(--bg))}
-.ans.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,var(--bg))}
+.ans.ok{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 22%,var(--paper))}
+.ans.bad{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 20%,var(--paper))}
+.ans.warn{border-color:#e0b000;background:color-mix(in srgb,#ffd21f 38%,var(--paper))}
+.ans.ok b,.ans.bad b{font-weight:800}
 .ans.edited{box-shadow:inset 0 0 0 2px var(--accent)}
 .tablebox{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
 table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
@@ -237,7 +238,7 @@ button.x{min-height:32px;padding:4px 10px;font-size:13px}
         <details class="cal" id="detailbox">
           <summary>Ver la ficha leída y corregir respuestas</summary>
           <div class="canvasbox" style="margin-top:10px"><canvas id="warp"></canvas></div>
-          <p class="hint">Verde: correcta. Rojo: incorrecta (el anillo azul marca la clave). Ámbar: doble marca o marca débil. Toca una respuesta para corregirla.</p>
+          <p class="hint"><b style="color:var(--ok)">Verde</b>: correcta. <b style="color:var(--bad)">Rojo</b>: incorrecta o doble marca (la letra pequeña es la clave). <b style="color:var(--warn)">Amarillo</b>: marca débil, por revisar. Blanco: sin marcar. Toca una respuesta para corregirla.</p>
           <div class="answers" id="answers"></div>
         </details>
       </section>
@@ -687,7 +688,7 @@ $('read').addEventListener('click', ()=>{
     current = {answers:r.answers, flags:r.flags, edited:new Set(), r};
     ['stPat','stMat','stNom'].forEach(id=>$(id).value=''); $('stGrado').value = store.get('lastGrado','') || (ev&&ev.grado) || '';
     $('s-res').hidden=false; renderResult(); showMsg($('savemsg'),'');
-    $('detailbox').open = current.flags.some(f=>f) || current.answers.includes('*');
+    $('detailbox').open = current.flags.some(f=>f==='weak');
     $('s-res').scrollIntoView({behavior:'smooth', block:'start'});
     setTimeout(()=>$('stPat').focus({preventScroll:true}), 400);
   } finally { $('read').disabled=false; $('read').textContent='Leer respuestas'; } }, 30);
@@ -704,7 +705,7 @@ function drawWarp(){
     row.forEach(([x,y],o)=>{ const L='ABCDEFGH'[o];
       ctx.lineWidth=2.5;
       if (a===L || (a==='*' && current.r.scores[q][o]>=current.r.T)){
-        ctx.strokeStyle = a==='*'||f==='weak' ? '#e0a020' : (!k||k==='-') ? '#3c82ff' : a===k ? '#18a058' : '#e0402e';
+        ctx.strokeStyle = a==='*' ? '#e0402e' : f==='weak' ? '#e0a020' : (!k||k==='-') ? '#3c82ff' : a===k ? '#18a058' : '#e0402e';
         ctx.beginPath(); ctx.arc(x,y,rr*1.15,0,7); ctx.stroke(); }
       else if (k===L && a!==k){ ctx.strokeStyle='#3c82ff'; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.arc(x,y,rr*1.15,0,7); ctx.stroke(); ctx.setLineDash([]); }
       else if (!a && f==='weak'){ ctx.strokeStyle='#e0a020'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x,y,rr*1.15,0,7); ctx.stroke(); }
@@ -712,13 +713,13 @@ function drawWarp(){
 }
 function renderResult(){
   drawWarp(); const key=getKey(), G=grade(current.answers);
-  const warn = current.flags.filter(f=>f).length + current.answers.filter(a=>a==='*').length;
+  const warn = current.flags.filter(f=>f==='weak').length;
   $('stats').innerHTML = `<div class="stat ok"><span>Correctas</span><b>${G.c}</b></div><div class="stat bad"><span>Incorrectas</span><b>${G.i}</b></div><div class="stat blank"><span>En blanco</span><b>${G.b}</b></div><div class="stat"><span>Puntaje</span><b>${fmt(G.pts)}</b></div><div class="stat"><span>Nota /20</span><b>${fmt(G.nota,1)}</b></div>`
     + (warn ? `<div class="stat warnbox"><span>Por revisar</span><b>${warn}</b></div>` : '');
   const box=$('answers'); box.innerHTML='';
   current.answers.forEach((a,q)=>{ const k=key[q], f=current.flags[q], b=document.createElement('button');
     b.type='button';
-    let cls = a==='*'||f ? 'warn' : (!k||k==='-'||!a) ? '' : a===k ? 'ok' : 'bad';
+    let cls = f==='weak' ? 'warn' : a==='*' ? 'bad' : (!k||k==='-'||!a) ? '' : a===k ? 'ok' : 'bad';
     b.className='ans '+cls+(current.edited.has(q)?' edited':'');
     b.innerHTML=`<span class="q">${q+1}.</span><b>${a==='*'?'2+':(a||'·')}</b><span class="k">${k&&k!=='-'&&a!==k?k:''}</span>`;
     b.title='Toca para cambiar';
@@ -731,7 +732,7 @@ $('save').addEventListener('click', ()=>{
   const st={paterno:$('stPat').value.trim(), materno:$('stMat').value.trim(), nombres:$('stNom').value.trim(), grado:$('stGrado').value.trim()};
   if (!st.paterno && !st.nombres){ showMsg($('savemsg'),'Escribe al menos el apellido paterno o los nombres del alumno.',true); $('stPat').focus(); return; }
   store.set('lastGrado', st.grado);
-  ev.results.push({...st, answers:current.answers.map(a=>a==='*'?'':a), t:Date.now(), sent:false}); saveEvals();
+  ev.results.push({...st, answers:[...current.answers], t:Date.now(), sent:false}); saveEvals();
   const G=grade(current.answers);
   current=null; img=null; $('s-res').hidden=true; $('cornerwrap').hidden=true; syncTitle();
   showMsg($('scanmsg'), `✓ Guardado: ${fullName(st)} — nota ${fmt(G.nota,1)}. Toma la foto de la siguiente ficha.`);
