@@ -56,6 +56,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .stat.ok b{color:var(--ok)} .stat.bad b{color:var(--bad)} .stat.blank b{color:var(--blank)}
 .answers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 10px;grid-auto-flow:column;grid-template-rows:repeat(20,auto)}
 @media (max-width:520px){.answers{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(40,auto)}}
+.keygrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(20,auto);grid-auto-flow:column;gap:2px 14px}
+@media (max-width:620px){.keygrid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(40,auto);gap:2px 6px}.kr{gap:2px;padding:2px 1px}.kr .q{width:18px;font-size:11px}}
+.kr{display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:8px;min-width:0}
+.kr:nth-child(odd){background:var(--soft)}
+.kr .q{font-family:var(--f-mono);font-size:12px;color:var(--muted);width:24px;text-align:right;flex:none;font-variant-numeric:tabular-nums}
+.kb{flex:1 1 0;min-width:0;max-width:30px;aspect-ratio:1;height:auto;min-height:0;padding:0;border-radius:50%;justify-content:center;font:600 12px/1 var(--f-body);background:var(--paper);color:var(--muted);border:1.5px solid var(--line)}
+.kb[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .ans{font:inherit;font-family:var(--f-mono);font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 8px;min-height:34px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-weight:500;cursor:pointer}
 .ans .q{color:var(--muted);font-variant-numeric:tabular-nums}
 .ans .k{font-size:12px;color:var(--muted)}
@@ -120,9 +127,14 @@ details.cal .grid3{margin-top:10px}
 
   <section class="step" id="s-key">
     <h2><span class="n">1</span>Clave de respuestas</h2>
-    <label class="f" for="key"><span>Escribe las 80 letras en orden (puedes usar espacios o números, se ignoran). Usa un guion (-) para anular una pregunta.</span>
-      <textarea id="key" spellcheck="false" autocapitalize="characters"></textarea>
-    </label>
+    <p class="hint">Toca la respuesta correcta de cada pregunta. Si tocas otra vez la misma, se desmarca y esa pregunta no se califica.</p>
+    <div class="keygrid" id="keygrid" role="group" aria-label="Clave de respuestas"></div>
+    <details class="cal">
+      <summary>Pegar la clave como texto</summary>
+      <label class="f" for="key" style="margin-top:8px"><span>Las 80 letras en orden; espacios y números se ignoran. Un guion (-) deja la pregunta sin calificar.</span>
+        <textarea id="key" spellcheck="false" autocapitalize="characters"></textarea>
+      </label>
+    </details>
     <div class="row"><span class="pill" id="keycount">0 / 80</span><span class="hint" id="keyhint"></span></div>
     <div class="grid3">
       <label class="f" for="ptsOk">Puntos por correcta<input type="number" id="ptsOk" step="0.25" value="1"></label>
@@ -461,14 +473,28 @@ function grade(ans){
 const fmt = (v,d=2)=> (Math.round(v*10**d)/10**d).toLocaleString('es-PE');
 
 /* ===== Paso 1: clave ===== */
+function buildKeyGrid(){
+  const g=$('keygrid'); g.innerHTML='';
+  for (let q=0;q<nq();q++){ const row=document.createElement('div'); row.className='kr';
+    row.innerHTML=`<span class="q">${q+1}</span>`+'ABCDE'.slice(0,profile.opts).split('').map(L=>`<button type="button" class="kb" data-q="${q}" data-l="${L}" aria-pressed="false" aria-label="Pregunta ${q+1}, ${L}">${L}</button>`).join('');
+    g.appendChild(row); }
+  g.onclick=e=>{ const b=e.target.closest('.kb'); if(!b) return; const q=+b.dataset.q, L=b.dataset.l;
+    const arr=getKey().slice(0,nq()); while(arr.length<nq()) arr.push('-');
+    arr[q] = arr[q]===L ? '-' : L;
+    $('key').value = arr.join('').replace(/(.{10})/g,'$1 ').trim(); onKey(); };
+}
+function syncKeyGrid(){ const k=getKey();
+  document.querySelectorAll('#keygrid .kb').forEach(b=>b.setAttribute('aria-pressed', String(k[+b.dataset.q]===b.dataset.l))); }
 function onKey(){
-  const k=getKey(); $('keycount').textContent = `${k.length} / ${nq()}`;
-  $('keycount').className = 'pill ' + (k.length===nq()?'ok':(k.length>nq()?'bad':'warn'));
-  $('keyhint').textContent = k.length===nq() ? 'Clave completa.' : k.length>nq() ? `Sobran ${k.length-nq()} letras.` : `Faltan ${nq()-k.length} respuestas.`;
+  const k=getKey(), marked=k.slice(0,nq()).filter(c=>c!=='-').length;
+  $('keycount').textContent = `${marked} / ${nq()}`;
+  $('keycount').className = 'pill ' + (k.length>nq()?'bad':marked===nq()?'ok':'warn');
+  $('keyhint').textContent = k.length>nq() ? `Sobran ${k.length-nq()} letras en el texto.` : marked===nq() ? 'Clave completa.' : `Faltan ${nq()-marked} por marcar.`;
+  syncKeyGrid();
   store.set('key', $('key').value); store.set('pts',[num('ptsOk'),num('ptsBad'),num('ptsBlank')]);
   if (current) renderResult(); renderList();
 }
-$('key').value = store.get('key', EXAMPLE_KEY);
+$('key').value = store.get('key', '');
 const pts = store.get('pts', [1,0,0]); $('ptsOk').value=pts[0]; $('ptsBad').value=pts[1]; $('ptsBlank').value=pts[2];
 ['key','ptsOk','ptsBad','ptsBlank'].forEach(id=>$(id).addEventListener('input', onKey));
 
@@ -679,5 +705,5 @@ async function sendPending(){
 }
 window.addEventListener('online', sendPending);
 showApp();
-buildCal(); onKey(); renderList(); sendPending();
+buildCal(); buildKeyGrid(); onKey(); renderList(); sendPending();
 </script>
